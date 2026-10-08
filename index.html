@@ -24,7 +24,7 @@
             border-radius: 9999px; padding: 12px 24px;
             font-weight: 600; font-size: 15px;
             transition: all 0.2s ease; cursor: pointer; border: none;
-            display: inline-flex; justify-content: center; items-center;
+            display: inline-flex; justify-content: center; align-items: center;
         }
         .btn-solid:hover { background-color: #27272A; }
         .btn-solid:disabled { background-color: #A1A1AA; cursor: not-allowed; }
@@ -35,6 +35,7 @@
             font-weight: 600; font-size: 15px;
             border: 1.5px solid #E4E4E7;
             transition: all 0.2s ease; cursor: pointer;
+            display: inline-flex; justify-content: center; align-items: center;
         }
         .btn-outline:hover { background-color: #F4F4F5; }
 
@@ -82,6 +83,19 @@
                 <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                 Trung Tâm Quản Trị
             </h2>
+        </div>
+
+        <!-- Cài Đặt Thông Báo Ngày Giờ Lên Hàng -->
+        <div class="bg-white p-6 md:p-8 rounded-3xl border border-zinc-200 shadow-sm mb-8 bg-blue-50/30">
+            <h3 class="text-lg font-bold text-zinc-900 mb-2">📢 Hẹn Giờ Lên Lô Hàng Mới</h3>
+            <p class="text-sm text-zinc-500 mb-5">Chọn ngày giờ để hiện thanh thông báo trên web khách hàng. Bấm "Tắt" để gỡ bỏ.</p>
+            
+            <div class="flex flex-col md:flex-row gap-3">
+                <input type="datetime-local" id="announce-time" class="input-flat flex-grow bg-white">
+                <button id="save-announce-btn" class="btn-solid bg-blue-600 hover:bg-blue-700 whitespace-nowrap">Lưu thông báo</button>
+                <button id="clear-announce-btn" class="btn-outline text-red-600 border-red-200 hover:bg-red-50 whitespace-nowrap">Tắt thông báo</button>
+            </div>
+            <div id="announce-status" class="text-sm font-semibold mt-3 h-5 text-green-600"></div>
         </div>
 
         <!-- Khu vực Upload -->
@@ -140,7 +154,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase Config
         const firebaseConfig = {
@@ -161,7 +175,7 @@
 
         const SIZES = [36, 37, 38, 39, 40, 41, 42, 43, 44, 45];
         let shoesData = [];
-        let currentAdminFilter = 36; // Mặc định hiển thị size 36 ở bảng quản lý
+        let currentAdminFilter = 36; // Mặc định hiển thị size 36
 
         // DOM Elements
         const passwordModal = document.getElementById('password-modal');
@@ -178,6 +192,12 @@
         const uploadBtn = document.getElementById('upload-btn');
         const uploadStatus = document.getElementById('upload-status');
         const deleteStatus = document.getElementById('delete-status');
+
+        // Khai báo phần tử cài đặt thông báo
+        const announceTimeInput = document.getElementById('announce-time');
+        const saveAnnounceBtn = document.getElementById('save-announce-btn');
+        const clearAnnounceBtn = document.getElementById('clear-announce-btn');
+        const announceStatus = document.getElementById('announce-status');
 
         const customAlertModal = document.getElementById('custom-alert-modal');
         const customAlertMsg = document.getElementById('custom-alert-msg');
@@ -203,9 +223,7 @@
             if(confirmActionCallback) confirmActionCallback();
         };
 
-        // Khởi tạo các nút Size
         SIZES.forEach(size => {
-            // Nút cho Upload
             const upBtn = document.createElement('button');
             upBtn.className = 'tag-btn upload-size-btn';
             upBtn.innerText = size;
@@ -213,7 +231,6 @@
             upBtn.onclick = () => upBtn.classList.toggle('active');
             uploadSizeContainer.appendChild(upBtn);
 
-            // Nút cho Bộ Lọc Quản Lý
             const filBtn = document.createElement('button');
             filBtn.className = `tag-btn filter-size-btn ${size === currentAdminFilter ? 'active' : ''}`;
             filBtn.innerText = size;
@@ -227,18 +244,52 @@
             adminFilterContainer.appendChild(filBtn);
         });
 
-        // Xử lý Đăng Nhập (Pass: 3119)
+        // Tải thông báo hiện tại
+        async function fetchAnnounceSetting() {
+            try {
+                const docRef = doc(db, "settings", "announcement");
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists() && docSnap.data().targetTime) {
+                    announceTimeInput.value = docSnap.data().targetTime;
+                }
+            } catch(e) { console.log("Lỗi tải cài đặt thông báo."); }
+        }
+
+        saveAnnounceBtn.onclick = async () => {
+            if(!announceTimeInput.value) { showAlert("Vui lòng chọn ngày giờ."); return; }
+            try {
+                saveAnnounceBtn.disabled = true; saveAnnounceBtn.innerText = "Đang lưu...";
+                await setDoc(doc(db, "settings", "announcement"), {
+                    targetTime: announceTimeInput.value
+                }, { merge: true });
+                announceStatus.innerText = "Đã lưu! Khách hàng sẽ thấy thanh thông báo.";
+                setTimeout(() => { announceStatus.innerText = ""; }, 4000);
+            } catch(e) { showAlert("Lỗi: " + e.message); }
+            finally { saveAnnounceBtn.disabled = false; saveAnnounceBtn.innerText = "Lưu thông báo"; }
+        };
+
+        clearAnnounceBtn.onclick = async () => {
+            try {
+                clearAnnounceBtn.disabled = true; clearAnnounceBtn.innerText = "Đang tắt...";
+                await setDoc(doc(db, "settings", "announcement"), { targetTime: "" }, { merge: true });
+                announceTimeInput.value = "";
+                announceStatus.innerText = "Đã tắt thành công! Thanh thông báo đã bị gỡ.";
+                setTimeout(() => { announceStatus.innerText = ""; }, 4000);
+            } catch(e) { showAlert("Lỗi: " + e.message); }
+            finally { clearAnnounceBtn.disabled = false; clearAnnounceBtn.innerText = "Tắt thông báo"; }
+        };
+
         function checkPass() {
             if (passInput.value === '3119') {
                 passwordModal.classList.add('hidden');
                 adminSection.classList.remove('hidden');
                 fetchShoes();
+                fetchAnnounceSetting(); // Gọi cài đặt giờ khi vào Admin
             } else { passError.classList.remove('hidden'); }
         }
         submitPassBtn.onclick = checkPass;
         passInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') checkPass(); });
 
-        // Hàm Nén Ảnh (Tự động nén ảnh nặng thành nhẹ)
         function compressImage(file, maxWidth = 1200, quality = 0.8) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -261,34 +312,22 @@
             });
         }
 
-        // Tải ảnh lên ImageKit
         async function uploadFileToImageKit(file) {
             const formData = new FormData();
             formData.append("file", file);
             formData.append("fileName", "shoe-" + Date.now() + ".jpg");
             formData.append("folder", "/tiemgiay"); 
-
-            const response = await fetch(IK_UPLOAD_ENDPOINT, {
-                method: "POST", headers: { "Authorization": "Basic " + IK_AUTH }, body: formData
-            });
+            const response = await fetch(IK_UPLOAD_ENDPOINT, { method: "POST", headers: { "Authorization": "Basic " + IK_AUTH }, body: formData });
             if (!response.ok) throw new Error("Lỗi tải lên ImageKit");
             return await response.json();
         }
 
-        // Xóa ảnh ImageKit (Nuốt lỗi CORS để chạy tiếp)
         async function deleteFileFromImageKit(fileId) {
             if (!fileId) return;
-            try {
-                await fetch(IK_DELETE_ENDPOINT + fileId, {
-                    method: "DELETE", headers: { "Authorization": "Basic " + IK_AUTH }
-                });
-            } catch(e) { 
-                // Bị chặn CORS -> Mặc kệ, không báo lỗi ra màn hình
-                console.log("ImageKit chặn xóa trình duyệt, bỏ qua..."); 
-            }
+            try { await fetch(IK_DELETE_ENDPOINT + fileId, { method: "DELETE", headers: { "Authorization": "Basic " + IK_AUTH } }); } 
+            catch(e) { console.log("ImageKit chặn xóa trình duyệt, bỏ qua..."); }
         }
 
-        // Xử lý nút Upload
         uploadBtn.onclick = async () => {
             const files = imageInput.files;
             if (files.length === 0) { showAlert("⚠️ Bạn chưa chọn hình ảnh."); return; }
@@ -322,7 +361,6 @@
 
             uploadStatus.innerHTML = `<span class="text-green-600">✅ Xong! Đã đăng ${successCount}/${files.length} đôi.</span>`;
             
-            // Reset Form
             imageInput.value = '';
             document.querySelectorAll('.upload-size-btn.active').forEach(b => b.classList.remove('active'));
             
@@ -336,14 +374,12 @@
             }, 3000);
         };
 
-        // Tải danh sách Giày
         async function fetchShoes() {
             try {
                 shoesData = [];
                 const querySnapshot = await getDocs(collection(db, "shoes"));
                 querySnapshot.forEach((doc) => { shoesData.push({ id: doc.id, ...doc.data() }); });
                 
-                // Sắp xếp mới nhất
                 shoesData.sort((a, b) => {
                     const timeA = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
                     const timeB = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
@@ -353,10 +389,8 @@
             } catch (error) { console.error(error); }
         }
 
-        // Vẽ Lưới Quản Lý
         function renderAdminList() {
             adminProductList.innerHTML = '';
-            
             const filteredShoes = shoesData.filter(shoe => shoe.sizes && shoe.sizes.includes(currentAdminFilter));
 
             if(filteredShoes.length === 0) {
@@ -371,7 +405,6 @@
                 item.innerHTML = `
                     <img src="${shoe.imageUrl}?tr=w-300,h-300,fo-auto" class="w-full h-full object-cover">
                     <div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                    
                     <button class="delete-btn absolute top-2 right-2 bg-white text-red-600 p-2 rounded-full shadow-md hover:bg-red-50 transition z-10" title="Xóa">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
@@ -384,15 +417,11 @@
                             delBtn.disabled = true;
                             delBtn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
                             
-                            // Gửi lệnh xóa cho ImageKit ngầm (Có lỗi cũng bỏ qua)
                             if (shoe.imageKitFileId) { await deleteFileFromImageKit(shoe.imageKitFileId); }
-                            
-                            // Xóa Firebase
                             await deleteDoc(doc(db, "shoes", shoe.id));
                             
                             deleteStatus.innerText = "Đã xóa thành công.";
                             await fetchShoes(); 
-                            
                             setTimeout(() => { deleteStatus.innerText = ""; }, 2000);
                         } catch(e) { showAlert("Lỗi khi xóa: " + e.message); }
                     });
